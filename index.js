@@ -22,7 +22,7 @@ const db = getFirestore(appFb);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Ity no URL ampidirinao ao amin'ny cron-job.org
+// Route Ping ho an'ny Cron-job.org
 app.get('/ping', (req, res) => {
     console.log('Ping received: Keeping bot alive');
     res.status(200).send('Bot is awake!');
@@ -38,11 +38,11 @@ app.listen(PORT, '0.0.0.0', () => {
 const token = process.env.BOT_TOKEN || "8423411883:AAEUmoFnqTelBhw-yDgBoa2vTMl6Z79DDik"; 
 const ADMIN_ID = 8207051152; 
 const DEPOSIT_ADDRESS = "0x12DAf4A9bCbfC537Dd06DB89789235110A521797";
+const BOT_USERNAME = "Autotrad_AIbot"; // Anaran'ny bot-nao
 
-// Creation du bot avec gestion d'erreur polling
 const bot = new TelegramBot(token, { polling: true });
 
-// Anti-Crash: Raha misy erreur réseau dia tsy maty ny bot
+// Anti-Crash
 bot.on('polling_error', (error) => {
     console.log('Polling error (ignore):', error.code);
 });
@@ -136,7 +136,7 @@ bot.on('message', async (msg) => {
     const text = msg.text;
     const userId = msg.from.id.toString();
 
-    // 1. Gestion Admin Reply
+    // 1. Admin Reply
     if (userStates[userId]?.type === 'ADMIN_REPLY' && text) {
         const targetId = userStates[userId].targetId;
         bot.sendMessage(targetId, `📩 **Réponse du Support:**\n\n${text}`, { parse_mode: 'Markdown' });
@@ -145,7 +145,7 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    // 2. Gestion Input Utilisateur (Depot/Retrait/Support)
+    // 2. User Input
     if (userStates[userId] && text !== 'Retour') {
         handleUserInput(chatId, userId, text, msg);
         return;
@@ -197,7 +197,9 @@ bot.on('message', async (msg) => {
             break;
 
         case '👥 Referral':
-            bot.sendMessage(chatId, `🔗 **Lien:** https://t.me/Autotrad_AIbot?start=${userId}\n\n🎁 Gains: 5% Dépôt + 0.1% Trading.`);
+            // ETO NO EFA AHITSY MBA HIFANARAKA AMIN'NY BOT ANAO:
+            const link = `https://t.me/${BOT_USERNAME}?start=${userId}`;
+            bot.sendMessage(chatId, `🔗 **Lien de parrainage:**\n\`${link}\`\n\n🎁 Gains: 5% Dépôt + 0.1% Trading.`, {parse_mode: 'Markdown'});
             break;
 
         case '❓ FAQ':
@@ -216,24 +218,23 @@ bot.on('message', async (msg) => {
     }
 });
 
-// --- LOGIQUE INPUTS (Dépôt, Retrait, etc.) ---
+// --- LOGIQUE INPUTS ---
 
 async function handleUserInput(chatId, userId, text, msg) {
     const state = userStates[userId];
 
-    // --- DÉPÔT (Séquence : Montant -> Adresse Apparaît -> Terminé -> Preuve) ---
+    // --- DÉPÔT ---
     if (state.type === 'DEPOSIT_AMOUNT') {
         const amount = parseFloat(text);
         if (isNaN(amount) || amount < 10) {
             bot.sendMessage(chatId, "⚠️ Montant invalide (Min 10$). Réessayez:");
             return;
         }
-        // IZAO NO MANEHO NY ADRESSE SY NY BOUTON TERMINÉ
         userStates[userId] = { type: 'DEPOSIT_PROOF', amount: amount };
         bot.sendMessage(chatId, `
 💳 **DÉPÔT EN COURS**
 
-Montant à envoyer: **${amount}$**
+Montant: **${amount}$**
 Réseau: **USDT BEP20 (Binance Smart Chain)**
 
 👇 **Copiez cette adresse:**
@@ -247,15 +248,13 @@ Réseau: **USDT BEP20 (Binance Smart Chain)**
         });
     }
     
-    // MANGATAKA SARY REHEFA AVY NIKITIKA TERMINÉ
     else if (state.type === 'DEPOSIT_PROOF' && text === '✅ Terminé') {
         userStates[userId] = { type: 'WAITING_PHOTO', amount: state.amount };
-        bot.sendMessage(chatId, "📸 Veuillez maintenant envoyer la **capture d'écran (Preuve)** de la transaction.");
+        bot.sendMessage(chatId, "📸 Envoyez maintenant la **capture d'écran** de la transaction.");
     }
     
-    // MANDRAY NY SARY
     else if (state.type === 'WAITING_PHOTO') {
-        if (!msg.photo) { bot.sendMessage(chatId, "⚠️ Ce n'est pas une image. Envoyez la preuve."); return; }
+        if (!msg.photo) { bot.sendMessage(chatId, "⚠️ Envoyez une image."); return; }
         const photoId = msg.photo[msg.photo.length - 1].file_id;
         
         bot.sendPhoto(ADMIN_ID, photoId, {
@@ -266,7 +265,7 @@ Réseau: **USDT BEP20 (Binance Smart Chain)**
         delete userStates[userId];
     }
 
-    // --- RETRAIT (Séquence : Montant -> Adresse Demandée -> Admin) ---
+    // --- RETRAIT ---
     else if (state.type === 'WITHDRAW_AMOUNT') {
         const amount = parseFloat(text);
         const user = await getUser(userId);
@@ -276,31 +275,28 @@ Réseau: **USDT BEP20 (Binance Smart Chain)**
             return;
         }
         if (user.balance < (amount + 1)) {
-            bot.sendMessage(chatId, `⚠️ Solde insuffisant (Montant + 1$ frais).\nVotre solde: ${user.balance.toFixed(2)}$`);
+            bot.sendMessage(chatId, `⚠️ Solde insuffisant (Frais inclus 1$).\nSolde: ${user.balance.toFixed(2)}$`);
             return;
         }
 
-        // TAHIRY NY MONTANT ARY MANGATAKA ADRESSE
         userStates[userId] = { type: 'WITHDRAW_ADDRESS', amount: amount };
-        bot.sendMessage(chatId, "🏦 Veuillez entrer votre **adresse de retrait USDT BEP20** (Commence par 0x...) :");
+        bot.sendMessage(chatId, "🏦 Entrez votre adresse **USDT BEP20** (Doit commencer par 0x...) :");
     }
     
-    // MANDRAY NY ADRESSE RETRAIT
     else if (state.type === 'WITHDRAW_ADDRESS') {
         const address = text.trim();
-        // Vérification adresse simple
         if (!address.startsWith("0x") || address.length < 20) {
-            bot.sendMessage(chatId, "⚠️ Adresse invalide. Elle doit commencer par '0x'. Réessayez ou tapez 'Retour'.");
+            bot.sendMessage(chatId, "⚠️ Adresse invalide (Format 0x...). Réessayez ou 'Retour'.");
             return;
         }
 
         const amount = state.amount;
-        bot.sendMessage(ADMIN_ID, `📤 **DEMANDE DE RETRAIT**\n\nUser: ${msg.from.first_name} (ID: ${userId})\nMontant: ${amount}$\nAdresse: \`${address}\`\n\nSolde actuel: ${(await getUser(userId)).balance}$`, {
+        bot.sendMessage(ADMIN_ID, `📤 **DEMANDE DE RETRAIT**\n\nUser: ${msg.from.first_name} (ID: ${userId})\nMontant: ${amount}$\nAdresse: \`${address}\`\n\nSolde User: ${(await getUser(userId)).balance}$`, {
             parse_mode: 'Markdown',
             reply_markup: { inline_keyboard: [[{ text: "✅ Payer", callback_data: `appr_with_${userId}_${amount}` }, { text: "❌ Refuser", callback_data: `rej_with_${userId}` }]] }
         });
 
-        bot.sendMessage(chatId, "⏳ Demande envoyée. En attente de validation par l'admin.", mainMenu);
+        bot.sendMessage(chatId, "⏳ Demande envoyée à l'admin.", mainMenu);
         delete userStates[userId];
     }
 
@@ -314,7 +310,7 @@ Réseau: **USDT BEP20 (Binance Smart Chain)**
     }
 }
 
-// --- LOGIQUE TRADING ---
+// --- TRADING ---
 
 async function handleTrading(chatId, userId) {
     const user = await getUser(userId);
@@ -329,12 +325,10 @@ async function handleTrading(chatId, userId) {
         if (diffHours < 24) { bot.sendMessage(chatId, `⚠️ Le bot se repose. Revenez dans ${(24 - diffHours)} heures.`); return; }
     }
 
-    bot.sendMessage(chatId, "🤖 **L'IA analyse le marché...**\n(Traitement en cours, patientez 30s...)", {parse_mode: 'Markdown'});
+    bot.sendMessage(chatId, "🤖 **L'IA analyse le marché...**\n(Patientez 30s...)", {parse_mode: 'Markdown'});
     
-    // 30 SECONDES D'ATTENTE
     setTimeout(async () => {
         try {
-            // Recalculer le user au cas où (éviter erreur si user supprimé entre temps)
             const currentUser = await getUser(userId);
             if (!currentUser) return;
 
@@ -348,15 +342,15 @@ async function handleTrading(chatId, userId) {
                 await updateDoc(doc(db, "users", currentUser.referrerId), { balance: increment(profit * 0.001) });
             }
 
-            bot.sendMessage(chatId, `✅ **Trading Terminé !**\n\n📈 Profit généré: +${profit.toFixed(2)}$\n💰 Ajouté à votre balance.`, mainMenu);
+            bot.sendMessage(chatId, `✅ **Gain:** +${profit.toFixed(2)}$ ajouté à la balance.`, mainMenu);
         } catch (e) {
             console.error("Erreur trading:", e);
-            bot.sendMessage(chatId, "Une erreur est survenue pendant le trading. Veuillez réessayer.", mainMenu);
+            bot.sendMessage(chatId, "Erreur trading. Réessayez.", mainMenu);
         }
     }, 30000); 
 }
 
-// --- CALLBACKS ADMIN ---
+// --- ADMIN CALLBACKS ---
 
 bot.on('callback_query', async (query) => {
     const data = query.data;
@@ -364,66 +358,49 @@ bot.on('callback_query', async (query) => {
     const msgId = query.message.message_id;
 
     try {
-        // VALIDATION DEPOT
         if (data.startsWith('appr_dep_')) {
             const [_, __, uid, amt] = data.split('_');
             const amount = parseFloat(amt);
-            
             await updateDoc(doc(db, "users", uid), { capital: increment(amount) });
             const u = await getUser(uid);
             if (u.referrerId) await updateDoc(doc(db, "users", u.referrerId), { balance: increment(amount * 0.05) });
-
             await addDoc(collection(db, "transactions"), { userId: uid, type: "DEPOSIT", amount, date: new Date().toISOString(), status: "APPROVED" });
-            
-            bot.sendMessage(uid, `✅ **Dépôt Confirmé !**\nVotre capital a été crédité de ${amount}$.`);
-            bot.editMessageCaption(`✅ Dépôt ${amount}$ VALIDÉ pour ${uid}.`, { chat_id: chatId, message_id: msgId });
+            bot.sendMessage(uid, `✅ Dépôt de ${amount}$ confirmé !`);
+            bot.editMessageCaption(`✅ Dépôt ${amount}$ VALIDÉ.`, { chat_id: chatId, message_id: msgId });
         }
         
-        // REJET DEPOT
         if (data.startsWith('rej_dep_')) {
             const uid = data.split('_')[2];
-            bot.sendMessage(uid, "❌ **Dépôt Refusé.** Vérifiez votre transaction.");
-            bot.editMessageCaption(`❌ Dépôt REJETÉ pour ${uid}.`, { chat_id: chatId, message_id: msgId });
+            bot.sendMessage(uid, "❌ Dépôt Refusé.");
+            bot.editMessageCaption(`❌ Dépôt REJETÉ.`, { chat_id: chatId, message_id: msgId });
         }
 
-        // VALIDATION RETRAIT
         if (data.startsWith('appr_with_')) {
             const [_, __, uid, amt] = data.split('_');
             const amount = parseFloat(amt);
             const totalDed = amount + 1;
-
             const u = await getUser(uid);
-            if (u.balance < totalDed) {
-                bot.sendMessage(ADMIN_ID, "⚠️ Erreur: Solde insuffisant chez l'utilisateur maintenant.");
-                return;
-            }
-
+            if (u.balance < totalDed) { bot.sendMessage(ADMIN_ID, "⚠️ Solde insuffisant maintenant."); return; }
             await updateDoc(doc(db, "users", uid), { balance: increment(-totalDed) });
             await addDoc(collection(db, "transactions"), { userId: uid, type: "WITHDRAWAL", amount, date: new Date().toISOString(), status: "SENT" });
-
-            bot.sendMessage(uid, `✅ **Retrait Validé !**\n${amount}$ ont été envoyés vers votre adresse.`);
-            bot.editMessageCaption(`✅ Retrait ${amount}$ PAYÉ pour ${uid}.`, { chat_id: chatId, message_id: msgId });
+            bot.sendMessage(uid, `✅ Retrait de ${amount}$ envoyé !`);
+            bot.editMessageCaption(`✅ Retrait ${amount}$ PAYÉ.`, { chat_id: chatId, message_id: msgId });
         }
 
-        // REJET RETRAIT
         if (data.startsWith('rej_with_')) {
             const uid = data.split('_')[2];
-            bot.sendMessage(uid, "❌ **Retrait Refusé.** Contactez le support.");
-            bot.editMessageCaption(`❌ Retrait REJETÉ pour ${uid}.`, { chat_id: chatId, message_id: msgId });
+            bot.sendMessage(uid, "❌ Retrait Refusé.");
+            bot.editMessageCaption(`❌ Retrait REJETÉ.`, { chat_id: chatId, message_id: msgId });
         }
 
-        // REPONSE SUPPORT
         if (data.startsWith('reply_sup_')) {
             const uid = data.split('_')[2];
             userStates[ADMIN_ID.toString()] = { type: 'ADMIN_REPLY', targetId: uid };
-            bot.sendMessage(ADMIN_ID, `✍️ Entrez la réponse pour l'utilisateur ID: ${uid}`);
+            bot.sendMessage(ADMIN_ID, `✍️ Réponse pour ID: ${uid}`);
         }
-    } catch (error) {
-        console.error("Erreur Callback:", error);
-    }
+    } catch (e) { console.error(e); }
 });
 
-// --- HISTORIQUE ---
 async function handleHistory(chatId, userId) {
     const q = query(collection(db, "transactions"), where("userId", "==", userId));
     const snapshot = await getDocs(q);
